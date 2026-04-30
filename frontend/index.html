@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>HBros Enterprises - Field Activity Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        ranch: {
+                            dark: '#3B2314',
+                            green: '#6B3A2A',
+                            light: '#8B5A2B',
+                            pale: '#C4956A',
+                            sand: '#F5E6D3',
+                            brown: '#A0724B'
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        .activity-section { max-height: 0; overflow: hidden; transition: max-height 0.4s ease; }
+        .activity-section.expanded { max-height: 3000px; }
+        .edit-only { display: none; }
+        .is-supervisor .edit-only { display: block; }
+        .is-supervisor .edit-only-flex { display: flex; }
+        .is-supervisor .edit-only-inline { display: inline; }
+        .not-supervisor .edit-only,
+        .not-supervisor .edit-only-flex,
+        .not-supervisor .edit-only-inline { display: none; }
+        @media screen and (max-width: 768px) {
+            input, select, textarea { font-size: 16px !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans not-supervisor">
+    <div id="login-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-ranch-dark">Supervisor Access</h2>
+                <button onclick="document.getElementById('login-modal').classList.add('hidden')" class="text-gray-500 text-2xl">&times;</button>
+            </div>
+            <form id="login-form" class="space-y-4" autocomplete="on">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <input type="text" id="login-user" name="username" autocomplete="username" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-ranch-green">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="login-pass" name="password" autocomplete="current-password" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-ranch-green">
+                </div>
+                <p id="login-error" class="text-red-500 text-sm hidden">Invalid credentials</p>
+                <button type="submit" class="w-full bg-ranch-green hover:bg-ranch-light text-white font-bold py-3 rounded-lg transition-colors">Sign In</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="main-app">
+        <header class="bg-gradient-to-r from-ranch-dark to-ranch-green shadow-xl">
+            <div class="container mx-auto px-4 py-3">
+                <div class="flex items-center justify-between flex-wrap gap-3">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <img src="./hb_logo.png" alt="HBros Logo" class="h-12 md:h-20 w-auto rounded-lg shadow-md flex-shrink-0">
+                        <div class="min-w-0">
+                            <h1 class="text-xl md:text-3xl font-black text-white truncate">Field Activity Monitor</h1>
+                            <p class="text-ranch-pale text-xs md:text-sm">HBros Enterprises - Real-time Tracker</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        <div class="text-right hidden sm:block">
+                            <p class="text-white text-sm font-medium" id="current-date"></p>
+                            <p class="text-ranch-pale text-xs" id="current-time"></p>
+                        </div>
+                        <button id="btn-login" onclick="document.getElementById('login-modal').classList.remove('hidden')" class="bg-white/20 hover:bg-white/30 text-white rounded-lg px-3 py-2 transition-colors text-sm font-medium">Login</button>
+                        <div id="supervisor-badge" class="hidden items-center gap-2 bg-white/20 rounded-lg px-3 py-2">
+                            <span class="text-ranch-pale text-xs">Supervisor</span>
+                            <button onclick="doLogout()" class="text-white hover:text-ranch-pale text-xs font-semibold" title="Sign out">Sign out</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="container mx-auto px-6 py-8">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-ranch-green">
+                    <p class="text-sm text-gray-600 font-medium">Total Fields</p>
+                    <p class="text-5xl font-black text-ranch-dark mt-2" id="total-fields">0</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-ranch-light">
+                    <p class="text-sm text-gray-600 font-medium">Active Fields</p>
+                    <p class="text-5xl font-black text-ranch-green mt-2" id="active-fields">0</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-ranch-brown">
+                    <p class="text-sm text-gray-600 font-medium">Completed</p>
+                    <p class="text-5xl font-black text-ranch-brown mt-2" id="completed-fields">0</p>
+                </div>
+                <div class="bg-gradient-to-br from-ranch-green to-ranch-light rounded-xl shadow-lg p-6 text-white">
+                    <p class="text-sm font-medium opacity-90">Overall Progress</p>
+                    <p class="text-5xl font-black mt-2" id="overall-progress">0%</p>
+                </div>
+            </div>
+
+            <div class="edit-only bg-white rounded-xl shadow-lg p-6 mb-8">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-xl font-bold text-gray-800">Cloud Sync (Supabase)</h2>
+                    <span id="cloud-sync-status" class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700">Local only</span>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">Optional. If disabled, app stays fully local. If enabled, it syncs `workers + fields` to Supabase with fallback to local.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Project URL</label>
+                        <input type="text" id="cloud-url" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="https://YOUR_PROJECT.supabase.co">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Anon Key</label>
+                        <input type="password" id="cloud-key" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="eyJ...">
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" id="cloud-enabled" class="accent-ranch-green">
+                        Enable cloud sync
+                    </label>
+                    <button type="button" onclick="saveCloudSettings()" class="bg-ranch-green hover:bg-ranch-light text-white text-sm font-semibold px-3 py-2 rounded-lg">Save Cloud Settings</button>
+                    <button type="button" onclick="testCloudConnection()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">Test Connection</button>
+                    <button type="button" onclick="syncCloudNow()" class="bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">Sync Now</button>
+                </div>
+                <p id="cloud-sync-message" class="text-xs text-gray-500 mt-2">No cloud activity yet.</p>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Executive Dashboard</h2>
+                    <span class="text-sm text-gray-500" id="report-date"></span>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 text-center">
+                        <p class="text-3xl font-black text-blue-700" id="kpi-total-workers">0</p>
+                        <p class="text-xs text-blue-600 font-medium mt-1">Total Workers</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 text-center">
+                        <p class="text-3xl font-black text-green-700" id="kpi-total-hours">0h</p>
+                        <p class="text-xs text-green-600 font-medium mt-1">Total Hours</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 text-center">
+                        <p class="text-3xl font-black text-purple-700" id="kpi-total-acres">0</p>
+                        <p class="text-xs text-purple-600 font-medium mt-1">Total Acres Done</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 text-center">
+                        <p class="text-3xl font-black text-orange-700" id="kpi-avg-pace">0</p>
+                        <p class="text-xs text-orange-600 font-medium mt-1">Avg Hrs/Acre</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div style="height: 280px;">
+                        <h3 class="text-sm font-bold text-gray-700 mb-3">Activity Progress (%)</h3>
+                        <canvas id="chart-activity"></canvas>
+                    </div>
+                    <div style="height: 280px;">
+                        <h3 class="text-sm font-bold text-gray-700 mb-3">Field Completion</h3>
+                        <canvas id="chart-fields"></canvas>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div style="height: 280px;">
+                        <h3 class="text-sm font-bold text-gray-700 mb-3">Hours by Field</h3>
+                        <canvas id="chart-hours"></canvas>
+                    </div>
+                    <div style="height: 280px;">
+                        <h3 class="text-sm font-bold text-gray-700 mb-3">Acres by Field</h3>
+                        <canvas id="chart-acres"></canvas>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-sm font-bold text-gray-700 mb-3">Worker Performance Summary</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm" id="worker-table">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th class="text-left p-3 rounded-tl-lg">Worker</th>
+                                    <th class="text-center p-3">Activities</th>
+                                    <th class="text-center p-3">Total Hrs</th>
+                                    <th class="text-center p-3">Total Acres</th>
+                                    <th class="text-center p-3 rounded-tr-lg">Avg Hrs/Ac</th>
+                                </tr>
+                            </thead>
+                            <tbody id="worker-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-2xl font-bold text-gray-800">Ranch Map</h2>
+                    <button type="button" onclick="resetMapView()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium">Reset Map View</button>
+                </div>
+                <div id="map" style="height: 550px; z-index: 1;" class="rounded-lg border-2 border-gray-200 relative">
+                    <div id="map-draft-tools" class="hidden absolute top-4 right-4 bg-white rounded-lg shadow-lg p-3 z-[1000] w-[260px]">
+                        <p class="text-xs font-bold text-gray-800 mb-2">New Field (Polygon Mode)</p>
+                        <p class="text-[11px] text-gray-600 mb-2">Start drawing first, then tap corners. Mix tap + GPS. Drag points to edit (white tip = exact point).</p>
+                        <div class="flex flex-wrap gap-2 mb-2">
+                            <button type="button" id="btn-draft-draw-map" onclick="toggleDraftDrawing()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-2 py-1.5 rounded">Start Drawing</button>
+                            <button type="button" onclick="addGpsPointToDraft()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-2 py-1.5 rounded">GPS Point</button>
+                            <button type="button" id="btn-gps-track-map" onclick="toggleGpsTrack()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2 py-1.5 rounded">Start Track</button>
+                            <button type="button" onclick="undoDraftPoint()" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-2 py-1.5 rounded">Undo</button>
+                            <button type="button" onclick="clearDraftPolygon()" class="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-2 py-1.5 rounded">Clear</button>
+                        </div>
+                        <p id="map-drawing-status" class="text-[11px] text-indigo-700 mb-1">Drawing: paused</p>
+                        <p class="text-[11px] text-gray-700">Draft points: <span id="map-draft-count" class="font-bold">0</span></p>
+                        <p class="text-[11px] text-gray-700">Draft area: <span id="map-draft-area" class="font-bold">0.0</span> ac</p>
+                    </div>
+                    <div class="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-4 z-[1000]">
+                        <p class="text-xs font-bold text-gray-800 mb-2">Field Status:</p>
+                        <div class="space-y-1 text-xs">
+                            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-green-500 rounded"></span><span>Completed (100%)</span></div>
+                            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-yellow-500 rounded"></span><span>In Progress (1-99%)</span></div>
+                            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-red-500 rounded"></span><span>Not Started (0%)</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="add-field-section" class="edit-only bg-white rounded-xl shadow-lg p-6 mb-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Add New Field</h2>
+                <form id="field-form" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Capture Mode</label>
+                        <select id="field-capture-mode" class="w-full px-4 py-2 border rounded-lg">
+                            <option value="rectangle">Rectangle (SW/NE)</option>
+                            <option value="polygon">Polygon (Tap + GPS)</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Field Name</label>
+                            <input type="text" id="field-name" required class="w-full px-4 py-2 border rounded-lg" placeholder="e.g., Field A">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Area (acres)</label>
+                            <input type="number" step="0.1" id="field-area" class="w-full px-4 py-2 border rounded-lg" placeholder="Calculated from coords">
+                        </div>
+                    </div>
+                    <div id="rectangle-coords">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Coordinates (Rectangle)</label>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div><label class="text-xs text-gray-600">SW Lat</label><input type="number" step="0.0001" id="sw-lat" class="w-full px-3 py-2 border rounded-lg text-sm"></div>
+                            <div><label class="text-xs text-gray-600">SW Lng</label><input type="number" step="0.0001" id="sw-lng" class="w-full px-3 py-2 border rounded-lg text-sm"></div>
+                            <div><label class="text-xs text-gray-600">NE Lat</label><input type="number" step="0.0001" id="ne-lat" class="w-full px-3 py-2 border rounded-lg text-sm"></div>
+                            <div><label class="text-xs text-gray-600">NE Lng</label><input type="number" step="0.0001" id="ne-lng" class="w-full px-3 py-2 border rounded-lg text-sm"></div>
+                        </div>
+                    </div>
+                    <div id="polygon-coords" class="hidden border rounded-lg p-4 bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-700 mb-2">Polygon Builder</p>
+                        <p class="text-xs text-gray-500 mb-3">Press Start Drawing, then tap map corners. You can mix tap + GPS and drag points to edit (white tip = exact point).</p>
+                        <div class="flex flex-wrap gap-2 mb-3">
+                            <button type="button" id="btn-draft-draw" onclick="toggleDraftDrawing()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">Start Drawing</button>
+                            <button type="button" onclick="addGpsPointToDraft()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">Add GPS Point</button>
+                            <button type="button" id="btn-gps-track" onclick="toggleGpsTrack()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">Start GPS Track</button>
+                            <button type="button" onclick="undoDraftPoint()" class="bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">Undo Last</button>
+                            <button type="button" onclick="clearDraftPolygon()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">Clear Polygon</button>
+                        </div>
+                        <p id="draft-drawing-status" class="text-xs text-indigo-700 mb-1">Drawing status: paused</p>
+                        <p class="text-xs text-gray-600 mb-1">Draft points: <span id="draft-point-count">0</span></p>
+                        <p class="text-xs text-gray-600 mb-1">Draft area: <span id="draft-area-acres">0.0</span> ac</p>
+                        <textarea id="draft-points-text" rows="4" readonly class="w-full text-xs border rounded-lg px-3 py-2 bg-white" placeholder="No points yet"></textarea>
+                    </div>
+                    <button type="submit" class="bg-ranch-green hover:bg-ranch-light text-white font-bold px-6 py-3 rounded-lg transition-colors">Add Field</button>
+                </form>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Workers Registry</h2>
+                <form id="worker-form" class="edit-only-flex flex gap-3 items-end mb-4">
+                    <div class="flex-1">
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Worker Name</label>
+                        <input type="text" id="worker-name" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-ranch-green" placeholder="Full name">
+                    </div>
+                    <button type="submit" class="bg-ranch-green hover:bg-ranch-light text-white font-bold px-6 py-2 rounded-lg transition-colors">+ Add Worker</button>
+                </form>
+                <div id="workers-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2"></div>
+            </div>
+
+            <div class="mb-8">
+                <h2 class="text-3xl font-black text-gray-800 mb-6">Fields Progress</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="fields-grid"></div>
+            </div>
+        </main>
+
+        <footer class="bg-gray-800 text-white py-6 mt-12">
+            <div class="container mx-auto px-6 text-center">
+                <p class="text-sm">&copy; 2026 HBros Enterprises</p>
+            </div>
+        </footer>
+    </div>
+
+    <div id="activity-map-modal" class="hidden fixed inset-0 bg-black/50 z-[1200]">
+        <div class="w-full h-full flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-5xl rounded-xl shadow-2xl overflow-hidden">
+                <div class="flex items-center justify-between p-4 border-b">
+                    <h3 id="activity-map-title" class="text-lg font-bold text-gray-800">Activity Visual Progress</h3>
+                    <button type="button" onclick="closeActivityMapModal()" class="text-gray-500 hover:text-gray-700 text-2xl leading-none">&times;</button>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-0">
+                    <div id="activity-map" style="height: 520px;"></div>
+                    <div class="border-l p-4 space-y-3 bg-gray-50">
+                        <p class="text-xs text-gray-600">Draw polygons representing visual progress for this activity. Only overlap with the field is counted.</p>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" id="btn-act-draw" onclick="toggleActivityPolyDrawing()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2 rounded">Start Drawing</button>
+                            <button type="button" onclick="undoActivityPolyPoint()" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-2 rounded">Undo</button>
+                            <button type="button" onclick="clearActivityPolyDraft()" class="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2 rounded">Clear</button>
+                            <button type="button" onclick="saveActivityPolyDraft()" class="bg-ranch-green hover:bg-ranch-light text-white text-xs font-semibold px-3 py-2 rounded">Save Polygon</button>
+                        </div>
+                        <p id="activity-poly-status" class="text-xs text-indigo-700">Drawing: paused</p>
+                        <p class="text-xs text-gray-700">Draft points: <span id="activity-poly-points">0</span></p>
+                        <p class="text-xs text-gray-700">Activity visual acres: <span id="activity-poly-acres">0.0</span></p>
+                        <p class="text-xs text-gray-700">Activity visual fill: <span id="activity-poly-fill">0%</span></p>
+                        <div>
+                            <p class="text-xs font-semibold text-gray-700 mb-1">Saved visual polygons</p>
+                            <div id="activity-poly-list" class="space-y-1 max-h-56 overflow-auto"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="./src/hbros-app.js"></script>
+</body>
+</html>
