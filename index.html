@@ -1,24 +1,77 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>HBros Enterprises Codex</title>
-    <meta http-equiv="refresh" content="0; url=./frontend/index.html" />
+    <title>HBros Enterprises</title>
     <style>
+      :root {
+        color-scheme: light;
+        font-family: Arial, sans-serif;
+        background: #f6f3eb;
+        color: #2f2319;
+      }
+
       body {
         margin: 0;
         min-height: 100vh;
         display: grid;
         place-items: center;
-        font-family: Arial, sans-serif;
-        background: #f6f3eb;
-        color: #2f2319;
       }
-      a { color: #6b3a2a; }
+
+      main {
+        width: min(720px, calc(100% - 32px));
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: 32px;
+      }
+
+      p {
+        margin: 0 0 24px;
+        color: #5f5144;
+      }
+
+      .versions {
+        display: grid;
+        gap: 12px;
+      }
+
+      a {
+        display: block;
+        padding: 18px 20px;
+        border: 1px solid #d8cdbf;
+        border-radius: 8px;
+        background: #fffaf2;
+        color: #2f2319;
+        text-decoration: none;
+      }
+
+      a strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      a span {
+        color: #6c5e50;
+      }
     </style>
   </head>
   <body>
-    <p>Redirecting to app... If it does not open, click <a href="./frontend/index.html">here</a>.</p>
+    <main>
+      <h1>HBros Enterprises</h1>
+      <p>Selecciona la version que quieres abrir.</p>
+      <div class="versions">
+        <a href="./hbrosenterprises_codexNEW/">
+          <strong>hbrosenterprises_codexNEW</strong>
+          <span>Version mas reciente en el repo original.</span>
+        </a>
+        <a href="./hbrosenterprises_bd/">
+          <strong>hbrosenterprises_bd</strong>
+          <span>Version del 14 abril 2026, 4:05 p. m.</span>
+        </a>
+      </div>
+    </main>
   </body>
-  </html>
+</html>
